@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>学習性重視のセキュリティミニゲーム（Web版）</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "メイリオ", sans-serif; margin: 0; padding: 16px; background: #f6f8fa; color: #111; }
+    header { background: linear-gradient(90deg,#0f172a,#0f3b66); color: #fff; padding: 18px; border-radius: 8px; margin-bottom: 18px; }
+    h1 { margin: 0 0 4px 0; font-size: 1.25rem; }
+    p.lead { margin: 0; opacity: 0.9; font-size: 0.95rem; }
+    .container { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+    .menu { background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .menu button { display:block; width:100%; margin:6px 0; padding:10px; border:1px solid #ddd; background:#fff; cursor:pointer; border-radius:6px; text-align:left; }
+    .menu button:hover { background:#f0f4ff; }
+    .panel { background:#fff; padding:14px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.06); min-height:300px; }
+    .small { font-size:0.9rem; color:#444; }
+    .hint { background:#fffbeb; border:1px solid #f5e3b3; padding:8px; border-radius:6px; margin-top:8px; }
+    .result { margin-top:12px; padding:10px; border-radius:8px; background:#eefaf1; border:1px solid #cfe9d6; }
+    label { display:block; margin:8px 0 4px 0; }
+    input[type="text"], textarea, select { width:100%; padding:8px; border:1px solid #ccc; border-radius:6px; box-sizing:border-box; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .muted { color:#666; font-size:0.9rem; }
+    footer { margin-top:16px; font-size:0.85rem; color:#555; }
+    .kbd { background:#111; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.85rem; }
+    .scorebox { font-weight:700; font-size:1.05rem; margin-top:8px; }
+    .actions { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+    .btn { padding:8px 12px; border-radius:6px; border: none; cursor:pointer; }
+    .btn-primary { background:#2563eb; color:#fff; }
+    .btn-danger { background:#ef4444; color:#fff; }
+    .btn-ghost { background:#fff; border:1px solid #ddd; }
+    .email { padding:8px; border:1px dashed #ddd; border-radius:6px; background:#fcfcfd; margin-top:8px; }
+    pre { background:#0b1220; color:#dff7c6; padding:8px; border-radius:6px; overflow:auto; }
+    @media(max-width:900px){ .container{ grid-template-columns: 1fr; } .menu{ order:2 } .panel{ order:1 } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>大学生専用セキュリティミニゲーム（Web版）</h1>
+    <p class="lead">短時間のチャレンジで即時フィードバックと解説を得られます。ローカルに進捗は保存されます（ブラウザの localStorage）。</p>
+  </header>
+
+  <div class="container">
+    <aside class="menu" id="menu">
+      <div class="small">Progress summary:</div>
+      <div id="progressSummary" class="small" style="margin:8px 0 10px 0;"></div>
+
+      <button onclick="startGame('phishing')">1) フィッシング判別（短時間）</button>
+      <button onclick="startGame('password')">2) パスワード強度と概念</button>
+      <button onclick="startGame('cipher')">3) 古典暗号（Caesar）解読</button>
+      <button onclick="startGame('forensics')">4) ログ解析（簡易フォレンジクス）</button>
+      <button onclick="clearProgress()" style="color:#b91c1c;">5) 進捗クリア</button>
+      <button onclick="showMenu()" class="btn-ghost">メニューに戻る</button>
+      <div style="margin-top:10px;" class="muted">保存: ブラウザに自動保存。別ブラウザ・別端末では同期されません。</div>
+    </aside>
+
+    <main class="panel" id="panel">
+      <div id="welcome">
+        <h2>ようこそ</h2>
+        <p class="small">左のメニューからミニゲームを選択してください。各ゲームは短く、解説と共にスコアが記録されます。</p>
+      </div>
+
+      <!-- Phishing -->
+      <div id="phishing" style="display:none;">
+        <h2>フィッシング判別チャレンジ</h2>
+        <div id="phishingArea"></div>
+        <div id="phishingResult"></div>
+      </div>
+
+      <!-- Password -->
+      <div id="password" style="display:none;">
+        <h2>パスワード強度チャレンジ</h2>
+        <p class="small">実運用パスワードは入力せず、ダミー文字列を使用してください。</p>
+        <label>ダミーのパスワードを入力</label>
+        <input type="text" id="pwdInput" autocomplete="off" />
+        <div class="actions">
+          <button class="btn btn-primary" onclick="evaluatePassword()">評価する</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('pwdInput').value=''">クリア</button>
+        </div>
+        <div id="pwdResult"></div>
+      </div>
+
+      <!-- Cipher -->
+      <div id="cipher" style="display:none;">
+        <h2>古典暗号（Caesar）解読チャレンジ</h2>
+        <div id="cipherArea"></div>
+        <label>復号した文を入力してください</label>
+        <input type="text" id="cipherAttempt" />
+        <div class="actions">
+          <button class="btn btn-primary" onclick="submitCipher()">送信</button>
+          <button class="btn btn-ghost" onclick="newCipher()">別の問題</button>
+        </div>
+        <div id="cipherResult"></div>
+      </div>
+
+      <!-- Forensics -->
+      <div id="forensics" style="display:none;">
+        <h2>簡易ログ解析チャレンジ</h2>
+        <div id="logsArea"></div>
+        <label>疑わしいIPを最大2つ、カンマ区切りで入力</label>
+        <input type="text" id="forensicInput" placeholder="例: 203.0.113.12, 198.51.100.77" />
+        <div class="actions">
+          <button class="btn btn-primary" onclick="submitForensics()">判定</button>
+          <button class="btn btn-ghost" onclick="newForensics()">別のログ</button>
+        </div>
+        <div id="forensicResult"></div>
+      </div>
+    </main>
+  </div>
+
+  <footer>
+    <small>この Web版はオフライン・学習用途の簡易移植です。実運用データの取り扱いや攻撃支援には使用しないでください。</small>
+  </footer>
+
+  <script>
+    // ---------- デフォルト progress ----------
+    const DEFAULT_PROGRESS = {
+      phishing: { played: 0, score: 0 },
+      password: { played: 0, score: 0 },
+      cipher: { played: 0, score: 0 },
+      forensics: { played: 0, score: 0 }
+    };
+    const STORAGE_KEY = "simple_security_game_progress";
+
+    function loadProgress() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          saveProgress(DEFAULT_PROGRESS);
+          return JSON.parse(JSON.stringify(DEFAULT_PROGRESS));
+        }
+        return JSON.parse(raw);
+      } catch (e) {
+        console.warn("progress load error", e);
+        return JSON.parse(JSON.stringify(DEFAULT_PROGRESS));
+      }
+    }
+    function saveProgress(p) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+      renderProgress();
+    }
+    function clearProgress() {
+      if (!confirm("本当に進捗をクリアしますか？")) return;
+      saveProgress(JSON.parse(JSON.stringify(DEFAULT_PROGRESS)));
+      alert("進捗をクリアしました。");
+      showMenu();
+    }
+
+    // ---------- メニューと表示 ----------
+    function showMenu() {
+      document.getElementById('welcome').style.display = 'block';
+      ['phishing','password','cipher','forensics'].forEach(id => document.getElementById(id).style.display='none');
+    }
+    function startGame(name) {
+      document.getElementById('welcome').style.display = 'none';
+      ['phishing','password','cipher','forensics'].forEach(id => document.getElementById(id).style.display = (id===name ? 'block':'none'));
+      if (name === 'phishing') renderPhishing();
+      if (name === 'cipher') newCipher();
+      if (name === 'forensics') newForensics();
+      if (name === 'password') { document.getElementById('pwdResult').innerHTML = ''; document.getElementById('pwdInput').value=''; }
+    }
+
+    // ---------- progress UI ----------
+    function renderProgress() {
+      const p = loadProgress();
+      const el = document.getElementById('progressSummary');
+      el.innerHTML = Object.keys(p).map(k => `<div>- ${k}: played ${p[k].played}, score ${p[k].score}</div>`).join('');
+    }
+    renderProgress();
+
+    // ---------- util: shuffle ----------
+    function shuffleArray(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    // ---------- phishing (問題を増量、ランダム化) ----------
+    const PHISHING_EMAILS = [
+      {
+        from: "it-support@univ-example.edu",
+        subject: "パスワードの更新が必要です",
+        body: "リンクからすぐにパスワードを変更してください: http://bit.ly/reset-now",
+        hint: "短縮URLや差出元の正規性に注意",
+        answer: "phishing"
+      },
+      {
+        from: "cs-lab@univ-example.edu",
+        subject: "次回のゼミ資料",
+        body: "今週のゼミ資料を添付しました。よろしく。",
+        hint: "差出元・文面のトーンを確認",
+        answer: "legit"
+      },
+      {
+        from: "billing@paypal.com",
+        subject: "請求に関する重要なお知らせ",
+        body: "不正アクセスの可能性があります。ログインして確認: https://paypal.com.update.verify.example.com",
+        hint: "URLホスト名を左から読む習慣を",
+        answer: "phishing"
+      },
+      {
+        from: "library@univ-example.edu",
+        subject: "貸出延長のお知らせ",
+        body: "貸出期間が延長されました。詳細は以下のリンク: https://univ-example.edu/loan-info",
+        hint: "差出元ドメインとリンク先のドメインが一致するか確認",
+        answer: "legit"
+      },
+      {
+        from: "security@univ-example.edu",
+        subject: "アカウントがロックされました",
+        body: "セキュリティのためアカウントをロックしました。解除するにはここをクリック: http://univ.example.unlock-account.example.com",
+        hint: "サブドメインの並びに注意。正規サービスならドメインが先に来る",
+        answer: "phishing"
+      },
+      {
+        from: "friend123@gmail.com",
+        subject: "写真見て！",
+        body: "写真を見てね: http://short.url/abcd\n（本文が短く、リンクだけ）",
+        hint: "知人を装った短文リンクは怪しいことがある",
+        answer: "phishing"
+      },
+      {
+        from: "noreply@ticketing.example.com",
+        subject: "イベントのチケット情報",
+        body: "購入確認: https://ticketing.example.com/orders/12345\n（正規のドメイン形式）",
+        hint: "ドメインが正規でHTTPSなら安全性は高いが常に注意を",
+        answer: "legit"
+      }
+    ];
+    let phishingState = { index: 0, emails: [] };
+    function renderPhishing() {
+      phishingState.emails = shuffleArray(PHISHING_EMAILS.slice());
+      phishingState.index = 0;
+      document.getElementById('phishingResult').innerHTML = '';
+      showPhishingEmail();
+    }
+    function showPhishingEmail() {
+      const i = phishingState.index;
+      const emails = phishingState.emails;
+      if (i >= emails.length) {
+        const score = emails.reduce((acc,e) => acc + (e._correct?1:0), 0);
+        document.getElementById('phishingResult').innerHTML = `<div class="result">このミニゲームの得点: ${score}/${emails.length}<div class="small">学び: 差出元、URL、リンクのホスト、文面の緊急性に注意しましょう。</div></div>`;
+        // 保存
+        const prog = loadProgress();
+        prog.phishing.played += 1;
+        prog.phishing.score += score;
+        saveProgress(prog);
+        return;
+      }
+      const e = emails[i];
+      const area = document.getElementById('phishingArea');
+      area.innerHTML = `
+        <div class="email">
+          <div><strong>メール #${i+1}</strong></div>
+          <div><strong>From:</strong> ${escapeHtml(e.from)}</div>
+          <div><strong>Subject:</strong> ${escapeHtml(e.subject)}</div>
+          <div style="margin-top:8px;"><strong>Body:</strong><div style="margin-top:6px;">${escapeHtml(e.body)}</div></div>
+        </div>
+        <div class="actions" style="margin-top:10px;">
+          <button class="btn btn-primary" onclick="answerPhishing('p')">(p) フィッシング</button>
+          <button class="btn btn-ghost" onclick="answerPhishing('l')">(l) 正当</button>
+        </div>
+        <div id="phishingHint" class="hint" style="display:none;"></div>
+      `;
+    }
+    function answerPhishing(choice) {
+      const i = phishingState.index;
+      const e = phishingState.emails[i];
+      const correct = (e.answer === 'phishing' ? 'p' : 'l');
+      let resHtml = '';
+      if (choice === correct) {
+        resHtml += `<div class="result">正解！ 解説: <div class="small">${escapeHtml(e.hint)}</div></div>`;
+        e._correct = true;
+      } else {
+        resHtml += `<div class="result" style="background:#fff1f2;border-color:#ffd2d8;">不正解。 解説: <div class="small">${escapeHtml(e.hint)}</div></div>`;
+        e._correct = false;
+      }
+      document.getElementById('phishingArea').insertAdjacentHTML('beforeend', resHtml);
+      phishingState.index++;
+      setTimeout(showPhishingEmail, 800);
+    }
+
+    // ---------- password ----------
+    function estimateCrackTime(password) {
+      let types = 0;
+      if (/[a-z]/.test(password)) types += 26;
+      if (/[A-Z]/.test(password)) types += 26;
+      if (/\d/.test(password)) types += 10;
+      if (/[^A-Za-z0-9]/.test(password)) types += 32;
+      const L = password.length;
+      let space = Math.pow(types, L);
+      const triesPerSec = 1e8;
+      let seconds = (triesPerSec>0 && space>0) ? space / triesPerSec : Infinity;
+      if (!isFinite(seconds) || seconds > 1e18) return "非常に長い（推定: 非現実的に長い）";
+      if (seconds < 60) return `${seconds.toFixed(2)} 秒 (非常に脆弱)`;
+      let minutes = seconds / 60;
+      if (minutes < 60) return `${minutes.toFixed(2)} 分`;
+      let hours = minutes / 60;
+      if (hours < 24) return `${hours.toFixed(2)} 時間`;
+      let days = hours / 24;
+      if (days < 365) return `${days.toFixed(2)} 日`;
+      let years = days / 365;
+      return `${years.toFixed(2)} 年`;
+    }
+    function scorePassword(password) {
+      let score = 0;
+      if (password.length >= 8) score += 1;
+      if (password.length >= 12) score += 1;
+      if (/[a-z]/.test(password)) score += 1;
+      if (/[A-Z]/.test(password)) score += 1;
+      if (/\d/.test(password)) score += 1;
+      if (/[^A-Za-z0-9]/.test(password)) score += 1;
+      return score; // 0..6
+    }
+    function evaluatePassword() {
+      const pw = document.getElementById('pwdInput').value.trim();
+      const out = document.getElementById('pwdResult');
+      if (!pw) { out.innerHTML = `<div class="result">入力がありません。スキップしました。</div>`; return; }
+      const est = estimateCrackTime(pw);
+      const s = scorePassword(pw);
+      let hint = '';
+      if (s < 3) {
+        hint = `<div class="small">- もっと長く、意味的なフレーズ（passphrase）にする。<br>- 大文字・小文字・数字・記号を混ぜる。</div>`;
+      } else {
+        hint = `<div class="small">- 既に良好です。さらに2段階認証(2FA)を有効にしましょう。</div>`;
+      }
+      out.innerHTML = `<div class="result">
+        推定総当たりクラッキング時間: <strong>${escapeHtml(est)}</strong><br/>
+        簡易強度スコア (0-6): <strong>${s}</strong>
+        ${hint}
+        <div style="margin-top:8px;">オプションデモ: <button class="btn btn-ghost" onclick="pwdDemo()">デモを見る</button></div>
+      </div>`;
+      // 保存
+      const prog = loadProgress();
+      prog.password.played += 1;
+      prog.password.score += s;
+      saveProgress(prog);
+    }
+    function pwdDemo() {
+      const el = document.getElementById('pwdResult');
+      el.insertAdjacentHTML('beforeend', `<div id="demoDots" class="small" style="margin-top:8px;"></div>`);
+      const demo = document.getElementById('demoDots');
+      demo.textContent = "デモ: 仮に攻撃者が10^6試行/秒できるとすると";
+      let i = 0;
+      const timer = setInterval(() => {
+        demo.textContent += ".";
+        i++;
+        if (i >= 6) {
+          clearInterval(timer);
+          demo.textContent += "\n（概念の説明のみ、実攻撃の支援は行いません）";
+        }
+      }, 350);
+    }
+
+    // ---------- cipher (Caesar) (例文を追加) ----------
+    const CIPHER_EXAMPLES = [
+      "Meet me at the library at noon",
+      "The quick brown fox jumps over the lazy dog",
+      "Security is important",
+      "Bring the assignment to the lab tomorrow",
+      "Don't share your password with anyone",
+      "Meet at the coffee shop near the main gate"
+    ];
+    let cipherState = { plain: "", shift: 0, cipher: "" };
+    function caesarEncrypt(s, shift) {
+      let res = "";
+      for (let ch of s) {
+        if (/[A-Z]/.test(ch)) {
+          const base = "A".charCodeAt(0);
+          res += String.fromCharCode((ch.charCodeAt(0)-base+shift)%26 + base);
+        } else if (/[a-z]/.test(ch)) {
+          const base = "a".charCodeAt(0);
+          res += String.fromCharCode((ch.charCodeAt(0)-base+shift)%26 + base);
+        } else {
+          res += ch;
+        }
+      }
+      return res;
+    }
+    function newCipher() {
+      const plain = CIPHER_EXAMPLES[Math.floor(Math.random()*CIPHER_EXAMPLES.length)];
+      const shift = Math.floor(Math.random()*25) + 1;
+      const cipher = caesarEncrypt(plain, shift);
+      cipherState = { plain, shift, cipher };
+      document.getElementById('cipherArea').innerHTML = `<div class="small">暗号文:</div><pre>${escapeHtml(cipher)}</pre>
+        <div class="hint">ヒント: これはシーザー暗号です。アルファベットを一定数だけシフトしています。</div>`;
+      document.getElementById('cipherResult').innerHTML = '';
+      document.getElementById('cipherAttempt').value = '';
+    }
+    function submitCipher() {
+      const attempt = document.getElementById('cipherAttempt').value.trim();
+      if (!attempt) { document.getElementById('cipherResult').innerHTML = `<div class="result">入力がありません。</div>`; return; }
+      let score = 0;
+      if (attempt.toLowerCase() === cipherState.plain.toLowerCase()) {
+        document.getElementById('cipherResult').innerHTML = `<div class="result">正解！ シフト量は ${cipherState.shift}</div>`;
+        score = 1;
+      } else {
+        document.getElementById('cipherResult').innerHTML = `<div class="result" style="background:#fff1f2;border-color:#ffd2d8;">違います。正解は: <pre>${escapeHtml(cipherState.plain)}</pre>シフト量は ${cipherState.shift}</div>`;
+        score = 0;
+      }
+      // 保存
+      const prog = loadProgress();
+      prog.cipher.played += 1;
+      prog.cipher.score += score;
+      saveProgress(prog);
+    }
+
+    // ---------- forensics (ログを増量、検出対象拡張) ----------
+    const FORENSICS_LOGS_SAMPLE = [
+      "2025-10-15 08:12:01 ACCEPT user=alice src=10.0.0.5 GET /index.html",
+      "2025-10-15 08:12:10 ACCEPT user=bob src=203.0.113.12 POST /login",
+      "2025-10-15 08:12:22 REJECT user=unknown src=198.51.100.77 POST /admin",
+      "2025-10-15 08:12:30 ACCEPT user=carol src=10.0.0.6 GET /notes",
+      "2025-10-15 08:12:40 REJECT user=unknown src=203.0.113.12 POST /login",
+      "2025-10-15 08:13:05 REJECT user=unknown src=192.0.2.45 POST /wp-admin",
+      "2025-10-15 08:13:20 ACCEPT user=dave src=10.0.0.7 GET /home",
+      "2025-10-15 08:13:40 REJECT user=unknown src=198.51.100.77 POST /admin"
+    ];
+    // 拡張: 疑わしいIPの候補を複数に
+    const FORENSICS_SUSPICIOUS = new Set(["198.51.100.77","203.0.113.12","192.0.2.45"]);
+    let forensicState = { logs: [] };
+    function newForensics() {
+      forensicState.logs = shuffleArray(FORENSICS_LOGS_SAMPLE).slice(0,6); // いくつかを抜粋して表示
+      const logsArea = document.getElementById('logsArea');
+      logsArea.innerHTML = '<div class="small">ログサンプル（行数が少ない簡易データ）:</div>' + forensicState.logs.map((l,i)=> `<div class="small">${i+1}: ${escapeHtml(l)}</div>`).join('');
+      document.getElementById('forensicResult').innerHTML = '';
+      document.getElementById('forensicInput').value = '';
+    }
+    function submitForensics() {
+      const ans = document.getElementById('forensicInput').value.trim();
+      if (!ans) { document.getElementById('forensicResult').innerHTML = `<div class="result">入力がありません。</div>`; return; }
+      const picks = ans.split(',').map(s=>s.trim()).filter(Boolean);
+      const correct = picks.reduce((acc,p)=> acc + (FORENSICS_SUSPICIOUS.has(p) ? 1:0), 0);
+      document.getElementById('forensicResult').innerHTML = `<div class="result">あなたの検出数: ${correct}/${FORENSICS_SUSPICIOUS.size}
+        <div class="small">解説: - 反復する拒否(REJECT)や外部IPのPOSTアクセスは注目すべきです。さらに調査するならタイムライン、ユーザエージェント、リクエスト内容を確認します。</div></div>`;
+      // 保存
+      const prog = loadProgress();
+      prog.forensics.played += 1;
+      prog.forensics.score += correct;
+      saveProgress(prog);
+    }
+
+    // ---------- utils ----------
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; });
+    }
+
+    // show initial menu
+    showMenu();
+  </script>
+</body>
+</html>
